@@ -1,3 +1,3 @@
-Download the `shape_predictor_68_face_landmarks.dat` from 
-[here](https://www.kaggle.com/datasets/sergiovirahonda/shape-predictor-68-face-landmarksdat)
+Download the `shape_predictor_68_face_landmarks.dat` from here :
+https://www.kaggle.com/datasets/sergiovirahonda/shape-predictor-68-face-landmarksdat
 and keep it in the same project folder. It is mandatory.
