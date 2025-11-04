@@ -1,16 +1,39 @@
 import cv2
 import time
-from playsound import playsound
+import dlib
+import imutils
+from imutils import face_utils
+from scipy.spatial import distance
+from pygame import mixer
 
-# Load Haar cascade classifiers for face and eyes
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+# Initialize mixer for alert sound
+mixer.init()
+mixer.music.load("music.wav")
 
-# Start webcam
+def eye_aspect_ratio(eye):
+    A = distance.euclidean(eye[1], eye[5])
+    B = distance.euclidean(eye[2], eye[4])
+    C = distance.euclidean(eye[0], eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+threshold = 0.25
+frame_check = 20
+flag = 0
+
+(l_start, l_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
+(r_start, r_end) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
+
+detect = dlib.get_frontal_face_detector()
+predict = dlib.shape_predictor("shape_predictor_68_landmarks.dat")
+
 cap = cv2.VideoCapture(0)
 
-closed_eyes_frames = 0
-alarm_triggered = False
+# ------------------- ⏱️ ADDED TIMER VARIABLES -------------------
+countdown_started = False
+countdown_start_time = None
+countdown_duration = 6   # seconds
+# ---------------------------------------------------------------
 
 while True:
     ret, frame = cap.read()
@@ -18,37 +41,58 @@ while True:
         break
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    subjects = detect(gray, 0)
 
-    # Detect faces
-    for (x, y, w, h) in faces:
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-        roi_gray = gray[y:y+h, x:x+w]
-        roi_color = frame[y:y+h, x:x+w]
+    for subject in subjects:
+        shape = predict(gray, subject)
+        shape = face_utils.shape_to_np(shape)
 
-        # Detect eyes in the region of face
-        eyes = eye_cascade.detectMultiScale(roi_gray)
+        leftEye = shape[l_start:l_end]
+        rightEye = shape[r_start:r_end]
 
-        if len(eyes) == 0:
-            closed_eyes_frames += 1
+        left_ear = eye_aspect_ratio(leftEye)
+        right_ear = eye_aspect_ratio(rightEye)
+        ear = (left_ear + right_ear) / 2.0
+
+        leftEyeHull = cv2.convexHull(leftEye)
+        rightEyeHull = cv2.convexHull(rightEye)
+        cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
+        cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
+
+        if ear < threshold:
+            flag += 1
+            print(f"Frame count below threshold: {flag}")
+
+            # ----------------- ⏱️ TIMER START -----------------
+            if not countdown_started:
+                countdown_started = True
+                countdown_start_time = time.time()
+            # Calculate remaining time
+            elapsed = time.time() - countdown_start_time
+            remaining = max(0, countdown_duration - int(elapsed))
+
+            # Show timer on screen
+            cv2.putText(frame, f"Eyes closed: {remaining}s", (400, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+            # When timer hits 0
+            if remaining == 0:
+                cv2.putText(frame, "******* ALERT *******", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.putText(frame, "******* ALERT *******", (10, 325),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                if not mixer.music.get_busy():
+                    mixer.music.play()
+            # -------------------------------------------------
         else:
-            closed_eyes_frames = 0
-            alarm_triggered = False
+            flag = 0
+            mixer.music.stop()
+            # Reset countdown if eyes open again
+            countdown_started = False
+            countdown_start_time = None
 
-        # If eyes are closed for >15 consecutive frames, sound alarm
-        if closed_eyes_frames > 15 and not alarm_triggered:
-            print("⚠️ Drowsiness Detected! ⚠️")
-            # You can use playsound with any mp3 or wav
-            playsound("alert.mp3")
-            alarm_triggered = True
+    cv2.imshow("Frame", frame)
 
-        # Draw rectangles around eyes
-        for (ex, ey, ew, eh) in eyes:
-            cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 2)
-
-    cv2.imshow('Driver Drowsiness Detection', frame)
-
-    # Press 'q' to exit
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
