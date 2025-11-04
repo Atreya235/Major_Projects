@@ -3,3 +3,5 @@ opencv-python
 imutils
 pygame
 cmake
+
+# for installing dlib and cmake visual studio c++ is required.Please download it.
